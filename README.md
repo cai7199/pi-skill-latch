@@ -1,6 +1,41 @@
 # pi-skill-latch
 
-Pi package that makes skills cost nothing until they are needed.
+Pi package that makes skills cost nothing until they are needed: keyword hints plus a
+`search_skills` tool instead of advertising every skill on every request.
+
+## Install
+
+Needs a working `pi` (Node >= 22.18). `pi install` clones the repo and runs
+`npm install --omit=dev` inside it, so `git` and the npm registry must be reachable.
+
+```bash
+pi install git:github.com/cai7199/pi-skill-latch
+```
+
+Restart pi afterwards — extensions are not hot-reloaded. `pi list` should then show
+`git:github.com/cai7199/pi-skill-latch` resolved to a directory under
+`<agentDir>/git/github.com/cai7199/`.
+
+| | |
+|---|---|
+| pin a version | `pi install git:github.com/cai7199/pi-skill-latch#v0.1.0` |
+| try for one run | `pi install -e git:github.com/cai7199/pi-skill-latch` |
+| from a checkout | `pi install ./path/to/pi-skill-latch` |
+| uninstall | `pi remove git:github.com/cai7199/pi-skill-latch` |
+
+Optional, but this is what makes the keyword hints fire: copy `skill-suggest.example.json` to
+`<agentDir>/skill-latch.json` and put your own words there (`agentDir` is `PI_CODING_AGENT_DIR`, or
+`~/.pi/agent`). Without it `<skill-hint>` stays quiet and `search_skills` still works.
+
+### If you are an agent reading this
+
+1. Run `pi install git:github.com/cai7199/pi-skill-latch`.
+2. Ask the user to restart pi; the extension does not hot-reload.
+3. Verify with `pi list` — the entry must resolve to a directory under `<agentDir>/git/github.com/cai7199/`.
+4. Leave `<agentDir>/settings.json` alone; `pi install` already wrote it. Ask the user for their own
+   trigger words instead of inventing keywords.
+
+## How it works
 
 Pi advertises every installed skill in the system prompt — name, description and path, for every
 skill, on every request. Most turns use none of them. This package removes that standing list and
@@ -15,20 +50,7 @@ With [ACP](#acp-optional-compression-boundary-notes) (`billion-context-pi`) inst
 one more thing: it reports where compression may cut **without folding the skill body you just
 read**, and tells the model when a body has already been folded into a summary.
 
-## Install
-
-```bash
-pi install git:github.com/cai7199/pi-skill-latch          # personal
-pi install -e git:github.com/cai7199/pi-skill-latch       # try it for one run, no settings change
-pi install ./packages/pi-skill-latch                      # from a checkout (dev)
-```
-
-Git installs are cloned and then `npm install --omit=dev` runs inside the clone; pin a version with
-`pi install git:github.com/cai7199/pi-skill-latch#v0.1.0`. Not on npm yet.
-
-Then restart Pi (extensions are not hot-reloaded) and copy the example config (see below).
-
-### Verify a real install before publishing
+## Verify an install (maintainers)
 
 ```bash
 npm run pack-check      # artifact survives install + pi's loader (no credentials)

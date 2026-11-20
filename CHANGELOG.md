@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- README now leads with install: prerequisites, the one-line `pi install git:…`, a variants table,
+  and an **"If you are an agent reading this"** block, so an agent can install without guessing.
+- `fresh-check --source <spec>` verifies an already-published source (`git:…`, `npm:…`, a path)
+  instead of packing the working tree; run it with `--auth` for the real-turn check too.
+
 ## [0.1.0]
 
 First public version. Extracted from a local Pi extension and generalised for sharing:
