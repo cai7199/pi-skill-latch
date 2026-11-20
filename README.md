@@ -34,7 +34,11 @@ Then restart Pi (extensions are not hot-reloaded) and copy the example config (s
 npm run pack-check      # artifact survives install + pi's loader (no credentials)
 npm run fresh-check     # empty agent dir: pi discovers it, word list fires (no credentials)
 npm run fresh-check -- --auth <path/to/auth.json>   # plus one real turn calling search_skills
+npm run fresh-check -- --source git:github.com/cai7199/pi-skill-latch   # skip packing, pull what is published
 ```
+
+`--source` swaps the tarball for a published spec (`git:…`, `npm:…`, a path), so the same check runs
+against what users actually install — still in a throwaway agent dir, still cleaned up afterwards.
 
 `pack-check` packs the tarball, installs it into an empty project, and loads **that copy** through
 pi's own jiti loader — asserting the hooks wired, `search_skills` registered, `<skill-hint>` injected

@@ -8,13 +8,14 @@
 // 用法：
 //   node scripts/fresh-check.mjs                 # 不碰凭据，只验证“空 profile 里装得起来”
 //   node scripts/fresh-check.mjs --auth <path>   # 追加一轮真对话（凭据会被**复制**到临时目录）
+//   node scripts/fresh-check.mjs --source git:github.com/user/repo   # 不打包，直接拉已发布的那份
 //   node scripts/fresh-check.mjs --pi <cli.js>   # 指定 pi 的 cli.js（默认用临时安装里那份）
 //   node scripts/fresh-check.mjs --keep          # 保留临时目录
 //
 // 凭据为什么不读内容：只做 copyFile，脚本从不解析、不打印、不落日志；临时目录用完即删。
 // 这也是为什么它不接 `--api-key`：命令行参数会进 shell 历史。
 import { spawnSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -28,6 +29,7 @@ const flag = (name) => {
 const keep = argv.includes("--keep");
 const authPath = flag("--auth");
 const piCliArg = flag("--pi");
+const source = flag("--source");
 const model = flag("--model") ?? "agnes-3.0-flash";
 const provider = flag("--provider") ?? "agnes";
 
@@ -36,8 +38,7 @@ const fail = (message) => {
 	throw new Error(message);
 };
 
-function npm(args, cwd) {
-	const runtime = dirname(process.execPath);
+function npm(args, cwd) {	const runtime = dirname(process.execPath);
 	const portable = join(runtime, "node_modules", "npm", "bin", "npm-cli.js");
 	const [exe, argv] = existsSync(portable) ? [process.execPath, [portable, ...args]] : ["npm", args];
 	const result = spawnSync(exe, argv, { cwd, encoding: "utf8" });
@@ -45,19 +46,49 @@ function npm(args, cwd) {
 	return result.stdout ?? "";
 }
 
+/** --source 模式下手上没有临时安装里那份 pi，得自己找：先向上找，再兼容便携安装的 releases/<ver>。 */
+function findHostPi() {
+	const rel = join("node_modules", "@earendil-works", "pi-coding-agent", "dist", "cli.js");
+	let dir = packageDir;
+	for (let i = 0; i < 6; i++) {
+		const candidate = join(dir, rel);
+		if (existsSync(candidate)) return candidate;
+		const parent = dirname(dir);
+		if (parent === dir) break;
+		dir = parent;
+	}
+	const releases = join(dirname(process.execPath), "..", "releases");
+	if (existsSync(releases)) {
+		const versions = readdirSync(releases)
+			.filter((name) => existsSync(join(releases, name, rel)))
+			.sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
+		if (versions.length > 0) return join(releases, versions[0], rel);
+	}
+	return undefined;
+}
+
 const tmp = mkdtempSync(join(tmpdir(), "pi-skill-latch-fresh-"));
 try {
-	step(`打包 → ${tmp}`);
-	const meta = JSON.parse(npm(["pack", "--pack-destination", tmp, "--json"], packageDir))[0];
-
-	step("装进一个假项目（模拟 npm 安装后的 node_modules）");
 	const project = join(tmp, "project");
 	mkdirSync(project, { recursive: true });
-	npm(["install", "--no-save", "--no-audit", "--no-fund", join(tmp, meta.filename)], project);
-	const installed = join(project, "node_modules", "pi-skill-latch");
 
-	const piCli = piCliArg ?? join(project, "node_modules", "@earendil-works", "pi-coding-agent", "dist", "cli.js");
-	if (!existsSync(piCli)) fail(`找不到 pi 的 cli.js：${piCli}（用 --pi 指定）`);
+	// 两种来源：默认把当前工作树打成 tgz（验发布物）；--source 则直接拉已发布的那份。
+	let installed;
+	if (source) {
+		step(`用已发布的源（不打包）：${source}`);
+	} else {
+		step(`打包 → ${tmp}`);
+		const meta = JSON.parse(npm(["pack", "--pack-destination", tmp, "--json"], packageDir))[0];
+		step("装进一个假项目（模拟 npm 安装后的 node_modules）");
+		npm(["install", "--no-save", "--no-audit", "--no-fund", join(tmp, meta.filename)], project);
+		installed = join(project, "node_modules", "pi-skill-latch");
+	}
+	const expected = source ?? installed;
+
+	const piCli =
+		piCliArg ??
+		(source ? findHostPi() : join(project, "node_modules", "@earendil-works", "pi-coding-agent", "dist", "cli.js"));
+	if (!piCli || !existsSync(piCli)) fail(`找不到 pi 的 cli.js：${piCli ?? "(未找到)"}（用 --pi 指定）`);
 
 	// 空的 agent 目录：没有旧配置、没有本地版、没有 ACP。只有本包 + 一份词表 + 一个技能。
 	const agentDir = join(tmp, "agent");
@@ -72,15 +103,16 @@ try {
 	const run = (args) => spawnSync(process.execPath, [piCli, ...args], { cwd: project, env, encoding: "utf8" });
 
 	// 直接用 cli.js + PI_CODING_AGENT_DIR：绕开便携版包装器（它会把自己的 profile 钉死）。
-	step("用户会敲的那条命令：pi install <目录>");
+	step(`用户会敲的那条命令：pi install ${expected}`);
 	const settingsPath = join(agentDir, "settings.json");
-	const install = run(["install", installed]);
+	const install = run(["install", expected]);
 	if (install.status !== 0) fail(`pi install 失败（exit ${install.status}）\n${install.stdout ?? ""}${install.stderr ?? ""}`);
 	if (!existsSync(settingsPath)) fail("pi install 没写出 settings.json");
 	const settings = JSON.parse(readFileSync(settingsPath, "utf8"));
-	// 注意：pi 存的是相对 agentDir 的路径，不能按字符串比
+	// 注意：pi 存的是相对 agentDir 的路径，不能按字符串比；git 源则是原样存 spec
 	const sameDir = (a) => resolve(agentDir, String(a)).toLowerCase();
-	if (!(settings.packages ?? []).some((p) => sameDir(p) === sameDir(installed))) {
+	const matches = (p) => (source ? String(p) === source : sameDir(p) === sameDir(installed));
+	if (!(settings.packages ?? []).some(matches)) {
 		fail(`settings.json 里没有刚装的包：${JSON.stringify(settings.packages)}`);
 	}
 	console.log(`  settings.json packages: ${JSON.stringify(settings.packages)}`);
@@ -92,7 +124,7 @@ try {
 	step("pi 在自己的发现流程里认得这个包吗");
 	const listed = run(["list"]);
 	const listOut = `${listed.stdout ?? ""}${listed.stderr ?? ""}`;
-	if (!listOut.includes(installed)) fail(`pi list 里没有 ${installed}\n${listOut}`);
+	if (!listOut.includes(expected)) fail(`pi list 里没有 ${expected}\n${listOut}`);
 	console.log("  pi list: 命中");
 
 	step("空 profile 里启动一次（不带工具，不花模型调用）");
