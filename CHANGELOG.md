@@ -1,0 +1,30 @@
+# Changelog
+
+## [0.1.0]
+
+First public version. Extracted from a local Pi extension and generalised for sharing:
+
+- `<skill-hint>`: keyword hits in the user's own words name the matching skills, with paths.
+- `search_skills`: keyword search over names, descriptions and your trigger words; no query lists
+  all skills.
+- The native `<available_skills>` list is cleared from the system prompt unless
+  `settings.nativeSkillList` keeps it. A first-request self-check reports when another package
+  snapshotted the prompt before the list was cleared.
+- Word list, `presets`, `companion` edges and `noname` all live in one user-owned config at
+  `<agentDir>/skill-latch.json`; the package ships an empty example instead of a personal list.
+- ACP integration is now optional and detected from the transcript: compression boundary notes,
+  folded-body notices and daily-nudge filtering only activate when ACP's message refs appear. The
+  package degrades to the on-demand skill channels on stock Pi.
+- `settings.entry` arbitrates between this package and a local variant installed on the same machine:
+  explicit `"local"` / `"generic"`, or `"auto"` where the copy loaded first wins. Both can stay
+  registered; only one wires up, so neither double-registers `search_skills` nor double-injects hints.
+- `npm run pack-check` verifies the *packed* artifact: pack, install into an empty project, load that
+  copy through pi's jiti loader, assert hooks, tool, hint and query. Catches what a dev tree hides
+  (missing `files` entries, `node_modules/` type-stripping limits, a peer dependency that never
+  resolves).
+- `npm run fresh-check` builds a throwaway agent dir whose only package is this one, so Pi's own
+  discovery has to find it; with `--auth <file>` it also runs one real turn and asserts
+  `search_skills` answers. Credentials are copied, never read.
+- `bin/audit-triggers.ts` reports skills no hint can reach, orphaned trigger keys, dead companion
+  edges and unused presets. Defaults follow Pi's standard skill locations instead of a local
+  checkout layout.

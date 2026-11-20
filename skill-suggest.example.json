@@ -1,0 +1,13 @@
+{
+  "settings": {
+    "entry": "auto",
+    "acp": "auto",
+    "nativeSkillList": false,
+    "searchTool": true,
+    "hints": true,
+    "debug": false
+  },
+  "presets": {},
+  "companion": {},
+  "noname": {}
+}
