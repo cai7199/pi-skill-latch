@@ -107,6 +107,31 @@ test("无 ACP：摘掉原生清单、按词表点名，且不钉住任何技能"
 	assert.equal(text(kept.content), text(emergency.content), "没有 ACP：不该往提醒里贴边界提示");
 });
 
+test("提醒的寿命只到第一个 turn：失败的 turn 不清，成功的结转一次后彻底安静", async () => {
+	const { pi, skillPath } = await fixture({ "demo-skill": ["仿真"] });
+	await pi.run("before_agent_start", { systemPromptOptions: systemOptions(skillPath) });
+	await pi.run("input", { text: "帮我跑个仿真", source: "interactive" });
+
+	const system = { role: "system", content: "prompt" };
+	const first = await pi.run("context_with_system", { messages: [system] });
+	assert.equal(hints(first.messages).length, 1, "第一个 turn：全量提醒");
+
+	// 未完成的 turn（限流失败也算）不清白板：那时技能还没被读到，重试必须还能见到名字。
+	await pi.run("turn_end", { type: "turn_end", outcome: "error", turnIndex: 0 });
+	const retry = await pi.run("context_with_system", { messages: [system] });
+	assert.match(text(hints(retry.messages)[0].content), /demo-skill/, "失败的 turn 不清白板");
+
+	// 成功的 turn 结算：点名没读的条目转成最后一次提醒，不再是全量重播。
+	await pi.run("turn_end", { type: "turn_end", outcome: "completed", turnIndex: 1 });
+	const carried = hints((await pi.run("context_with_system", { messages: [system] })).messages);
+	assert.equal(carried.length, 1, "点名没读的条目结转一次");
+	assert.match(text(carried[0].content), /Previously named, final reminder: demo-skill/, "第二次是最后提醒");
+
+	// 发出即消费：第三次起彻底安静，否则就成了每条消息计费的墙纸。
+	const quiet = await pi.run("context_with_system", { messages: [system] });
+	assert.equal(hints(quiet.messages).length, 0, "结转发出即消费：第三次起彻底安静");
+});
+
 test("无 ACP：日常压缩提醒不碰（那是 ACP 的东西），search_skills 两条分支都在", async () => {
 	const { pi, skillPath } = await fixture({ "demo-skill": ["仿真"] });
 	await pi.run("before_agent_start", { systemPromptOptions: systemOptions(skillPath) });

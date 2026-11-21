@@ -1,7 +1,20 @@
 # Changelog
 
-## Unreleased
+## [0.2.0]
 
+Requires `pi` 1.6.0 or newer. The hint now expires at the end of a *turn* rather than at the end of a
+user message, which becomes observable through `turn_end`'s `outcome`.
+
+- **The skill hint now lives for one turn, not one user message.** A turn is one LLM request plus the
+  tool calls it makes; by its end the model has either read the named `SKILL.md` or moved on. The old
+  boundary was `agent_settled`, which fires only after the whole message settles — so a message with N
+  requests re-read the same hint N times, a cost paid per request, which is exactly what this package
+  exists to avoid. `turn_end` also carries `outcome`, so a failed turn (rate limit, abort) leaves the
+  slate alone and the retry still sees the names.
+- **Carry-over is now at most two hints per user message:** the full hint in the first turn, one
+  `Previously named, final reminder:` line in the second, then silence. Reading the skill at any point
+  drops it from the carried list.
+- `peerDependencies` now requires `@earendil-works/pi-coding-agent >=1.6.0` instead of `*`.
 - README now leads with install: prerequisites, the one-line `pi install git:…`, a variants table,
   and an **"If you are an agent reading this"** block, so an agent can install without guessing.
 - `fresh-check --source <spec>` verifies an already-published source (`git:…`, `npm:…`, a path)

@@ -49,9 +49,21 @@
  * 协同关系由同一份配置的保留键 `companion` 写死，命中时同伴并进同一块——还能按词收窄（`only`）。
  * 规则与代价分析在 `lib/suggest.ts` 的 `appendCompanions`。
  *
- * 提醒的寿命只到 `agent_settled`，而原生清单又被摘掉了。于是「先读版式技能，论文技能下一轮再说」
- * 在模型看来完全合理——下一轮它连名字都不存在了。补法：上轮点名而没读的条目结转到下一次请求
- * 再提**一次**。只提一次，多了就成了每轮计费的墙纸。
+ * 提醒的寿命只到**第一个 turn 结束**（`pendingText` 在 `turn_end` 清空），而原生清单又被摘掉了。
+ * 于是「先读版式技能，论文技能下一轮再说」在模型看来完全合理——下一轮它连名字都不存在了，
+ * 那是设计缺口，不是模型懒。补法：点名而没读的条目结转到下一次请求再提**一次**
+ * （`unread` 在 `turn_end` 结算，`context_with_system` 里并进同一块）。只提一次，
+ * 多了就成了每次请求计费的墙纸（同一个道理见 `<skill-hint>` 误报的代价）。
+ *
+ * ### 为什么挂在 `turn_end` 而不是 `agent_settled`
+ * 一个 turn = 一次 LLM 请求 + 它发起的工具执行，到这个点模型已经用行为表态：要么读了
+ * SKILL.md，要么干了别的。再往下念就是无内容重复——而 `HINT_LEAD` 写的本来就是 `this turn`，
+ * 挂 `agent_settled` 等于实现比文案更啰嗦：一条用户消息里 N 次请求就念 N 次。
+ * `agent_end` 更差：一次用户消息通常只对应一个 low-level run，它几乎落在最后一个 turn 之后，
+ * 省不掉任何重复；反倒是重试/压缩重试/排队消息会提前抹掉白板，复现 `lib/pending-text.ts`
+ * 记过的「标记被一次看不见的重试抹掉」。
+ * 未完成的 turn（`outcome !== "completed"`，例如限流失败）不清：那时白板还得留给重试。
+ * `agent_settled` 留作兜底，被中断或没有 turn 的路径仍在那里收尾。
  *
  * ## ACP 的压缩提醒：日常那条丢，紧急与 tier 留着
  * ACP 的提醒注入在**它的** `context` 处理器里，本包挂在 `context_with_system`（按定义跑在所有
@@ -146,8 +158,9 @@ export default async function skillLatch(pi: ExtensionAPI): Promise<void> {
 
 	// 本轮要扫的用户原文。由 `input` 写入（那时 `/skill:` 还没展开，拿到的是用户真敲的字），
 	// `context_with_system` 每轮现读——模型中途读了某个技能，下一次请求就不该再提它。
+	// 寿命是**第一个 turn**：`turn_end` 一清，本条消息余下的请求不再重新匹配（见文件头）。
 	let pendingText = "";
-	// 本轮点名过、模型还没读的技能：`agent_settled` 结算，下一次请求再提一次（见文件头）。
+	// 本轮点名过、模型还没读的技能：`turn_end` 结算，下一次请求再提一次（见文件头）。
 	// 类型取 `SkillRef` 而不是 `Suggestion`：结转条目的 `matched` 已经过期，不该再带进提醒。
 	let offered: SkillRef[] = [];
 	let unread: SkillRef[] = [];
@@ -355,16 +368,26 @@ export default async function skillLatch(pi: ExtensionAPI): Promise<void> {
 		return { messages: [...event.messages, hint] };
 	});
 
-	// 一轮结束：把「点名过但没读」的留给下一轮一次，其余清空。
+	// 结算：把「点名过但没读」的留给下一次请求一次，其余清空。
 	//
-	// 判据在结算时再取一次 `latch.names()`：末轮读过但 `offered` 拍得早的那些，不该被当成没读。
-	// `pendingText` 照旧丢掉，免得下一轮拿上一轮的话去扫。
-	pi.on("agent_settled", () => {
+	// 判据在结算时再取一次 `latch.names()`：结算前刚读过、而 `offered` 拍得早的那些，不该被当成没读。
+	// `pendingText` 照旧丢掉，免得下一次请求拿这一轮的话去扫。
+	const settleRound = () => {
 		const latchedNow = new Set(latch.names().map((name) => name.toLowerCase()));
 		unread = offered.filter((entry) => !latchedNow.has(entry.name.toLowerCase()));
 		offered = [];
 		pendingText = "";
+	};
+
+	// turn 边界结算（见文件头）：一次回复 + 它的工具已经落定，模型要不要读已用行为表态。
+	// 未完成的 turn 不清——限流失败也会触发本事件，那时白板还得留给重试。
+	pi.on("turn_end", (event) => {
+		if (event.outcome !== "completed") return;
+		settleRound();
 	});
+
+	// 兜底：被中断（没有 turn）、或结算前异常退出的路径，仍在这里收尾。
+	pi.on("agent_settled", () => settleRound());
 
 	// 常驻规矩：不在钉住期间才出现——规则面在请求前缀里，时隐时现会让前缀缓存整体失效。
 	// 「compress 与正文」只剩那行提示在说，不再需要一条常驻规矩。

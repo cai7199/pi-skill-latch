@@ -351,7 +351,7 @@ test("白板：斜杠命令与 `!` 命令清空，不拿展开后的技能正文
  */
 test("提醒 lead：清单是一道复数题，不是挑一个", () => {
 	// 防回归：实测模型只读排第一的 office-docx，把内容侧的 paper 留给「下一轮」——
-	// 而下一轮提醒已经没了（寿命只到 agent_settled）。单数祈使句 + 一块清单就是那个诱因。
+	// 而下一轮提醒已经没了（寿命只到第一个 turn 结束）。单数祈使句 + 一块清单就是那个诱因。
 	assert.doesNotMatch(HINT_LEAD, /Read the SKILL\.md before acting/, "单数指令必须消失");
 	assert.match(HINT_LEAD, /Read each covering SKILL\.md in full/, "全读——latch 的指纹定位靠全文");
 	assert.match(HINT_LEAD, /in parallel, this turn/, "多命中默认一次读全：同 turn 并行堵死「读一个留其余」的缺口");

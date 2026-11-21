@@ -34,7 +34,7 @@ export const HINT_TAG = "skill-hint";
  * - 读法（全读、同轮并行、this turn）收进 `READ_IN_FULL`，与 `search_skills` 的 lead 共用：
  *   两个「加载时」通道各写一份必然漂移，只留一个常量。复数 + 同轮并行是「只读第一个」的
  *   防复发措施：实测模型读了 `office-docx`，把内容侧的 `paper` 留给「下一轮」，而下一轮
- *   的提醒早就不在了（寿命只到 `agent_settled`）；复合任务（写 Word 论文 = 版式 + 内容）
+ *   的提醒早就不在了（寿命只到第一个 turn 结束）；复合任务（写 Word 论文 = 版式 + 内容）
  *   恰恰要求同一次读两个，所以这一句要明确「每一条都属于这次任务就都读」。
  * - 「按 `<description>` 逐个判断」已上提 L0 的 `HINT_CANDIDATE_GUIDELINE`（每轮计费），
  *   lead 不再重复：同一句话写在两层，双计费且改一处漏一处。
@@ -97,7 +97,7 @@ export function latchedNote(names: readonly string[]): string {
  * 提醒 lead 的追加句「上一轮点名、到现在还没读」。
  *
  * ## 为什么需要它
- * `<skill-hint>` 的寿命是一条用户消息：`pendingText` 在 `agent_settled` 就清空，而原生
+ * `<skill-hint>` 的寿命只到本条消息的第一个 turn：`pendingText` 在 `turn_end` 就清空，而原生
  * `<available_skills>` 已被摘掉。于是「这一轮先读版式技能，论文技能下一轮再说」这句在模型
  * 看来完全合理——下一轮它连 `paper` 这个名字都不存在了，不是它懒，是它没法知道。
  *

@@ -5,7 +5,7 @@ Pi package that makes skills cost nothing until they are needed: keyword hints p
 
 ## Install
 
-Needs a working `pi` (Node >= 22.18). `pi install` clones the repo and runs
+Needs a working `pi` **1.6.0 or newer** (Node >= 22.18). `pi install` clones the repo and runs
 `npm install --omit=dev` inside it, so `git` and the npm registry must be reachable.
 
 ```bash
@@ -34,6 +34,21 @@ Optional, but this is what makes the keyword hints fire: copy `skill-suggest.exa
 3. Verify with `pi list` — the entry must resolve to a directory under `<agentDir>/git/github.com/cai7199/`.
 4. Leave `<agentDir>/settings.json` alone; `pi install` already wrote it. Ask the user for their own
    trigger words instead of inventing keywords.
+
+## Compatibility
+
+Built and tested against `pi` **1.6.0**; `package.json` → `peerDependencies` requires `>=1.6.0`.
+
+The reason for the floor is the hint's lifetime. `<skill-hint>` expires at the end of a *turn* — one
+LLM request plus the tool calls it makes — rather than at the end of a user message. That boundary is
+`turn_end`, and its `outcome` field is what stops a failed turn (rate limit, abort) from wiping the
+slate before the retry sees the names again. Before 0.2.0 the same logic hung on `agent_settled`,
+which fires once the whole message settles: a message containing N requests re-read the hint N times,
+so the "costs nothing until needed" premise leaked on exactly the messages that used the most turns.
+
+`engines.node` is `>=22.18`, same as `pi`. ACP extras (compression boundary notes, folded-body
+notices, nudge filtering) stay optional and self-detecting: on stock Pi the package degrades to the
+keyword hint and `search_skills`.
 
 ## How it works
 
