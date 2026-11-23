@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+- `peerDependencies` 放宽：`@earendil-works/pi-coding-agent >=1.6.0` → `>=1.5.0`。核查确认 1.5.0 起
+  已有带 `outcome` 的可操作 `turn_end` 边界（`BoundaryState.outcome: "completed" | "aborted" | "error"`），
+  扩展只用 1.5.0+ 事件面，包实际支持 pi 1.5.0 及以上。
+
 ## [0.2.0]
 
 Requires `pi` 1.6.0 or newer. The hint now expires at the end of a *turn* rather than at the end of a
