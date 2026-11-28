@@ -1,6 +1,8 @@
 /**
- * ACP 的「该压缩了」提醒（nudge）在上下文里是一条**合成的 user 消息**：正文由
- * `renderNudgeText` 拼出，必含 `HOW TO COMPRESS` 规则块。
+ * ACP 的「该压缩了」提醒（nudge）在旧版里是一条**合成的 user 消息**：正文由
+ * `renderNudgeText` 拼出，必含 `HOW TO COMPRESS` 规则块。`billion-context` 0.1.216+ 改成在
+ * 本地代理层注入（trailing user turn），Pi 的 `context_with_system` 看不到；这里的滤网只对
+ * 旧版把 nudge 追加进 `context` 的 ACP 有效，边界行不依赖它。
  *
  * ## 日常、紧急、tier 三种提醒分开处理
  * ACP 按占用率换口吻：不到 `maxContextLimitPct`（默认 0.75）是温和的 "This is an efficiency
@@ -35,7 +37,7 @@ const EMERGENCY_ANCHORS = ["Context limit reached", "[EMERGENCY"];
 const GENTLE_ANCHORS = ["This is an efficiency nudge"];
 
 /** 两类都带、用来认出「这是提醒」的锚点。 */
-const NUDGE_ANCHORS = [...EMERGENCY_ANCHORS, ...GENTLE_ANCHORS, "HOW TO COMPRESS", "Compressed blocks: "];
+const NUDGE_ANCHORS = [...EMERGENCY_ANCHORS, ...GENTLE_ANCHORS, "HOW TO COMPRESS", "Compressed blocks: ", "Active blocks ("];
 
 function textOf(message: unknown): string {
 	if (typeof message !== "object" || message === null) return "";

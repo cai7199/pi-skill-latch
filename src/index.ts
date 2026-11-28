@@ -26,7 +26,7 @@
  *
  * ## ACP 的压缩边界：可选增强，不在就整块不跑
  * 技能正文（SKILL.md）一旦被折成摘要，模型就处于两种坏状态之一：重读一遍（白花 token），
- * 或者在「以为自己还记得」的情况下继续干（更糟）。装了 ACP（`billion-context-pi`）时，本包在
+ * 或者在「以为自己还记得」的情况下继续干（更糟）。装了 ACP（`billion-context`）时，本包在
  * 钉住期间每轮报一行「压到哪为止」；压过去就折成摘要，下一轮再告知一次。细节在
  * `acp/boundary-note.ts` 与 `acp/reread-note.ts`。
  *
@@ -65,14 +65,15 @@
  * 未完成的 turn（`outcome !== "completed"`，例如限流失败）不清：那时白板还得留给重试。
  * `agent_settled` 留作兜底，被中断或没有 turn 的路径仍在那里收尾。
  *
- * ## ACP 的压缩提醒：日常那条丢，紧急与 tier 留着
- * ACP 的提醒注入在**它的** `context` 处理器里，本包挂在 `context_with_system`（按定义跑在所有
- * `context` 之后）才看得到（见 `acp/nudge-filter.ts`）。日常语音（"efficiency nudge"）**丢掉**：
- * 它从 45% 占用起每轮都来，而压不压此刻由那行提示自己说，提醒只是在重复模型已经知道的东西——
- * 用户实测「触发太频繁」，一直屏蔽。
+ * ## ACP 的压缩提醒：旧版才滤，新版不在钩子里
+ * 旧版 ACP 把提醒追加在**它的** `context` 处理器里，本包挂在 `context_with_system`（按定义跑在所有
+ * `context` 之后）才看得到（见 `acp/nudge-filter.ts`）。`billion-context` 0.1.216+ 改成在本地
+ * 代理层注入（trailing user turn），所有 Pi 钩子都看不到；这里的滤网对它是空转，边界行不依赖它。
  *
- * 紧急语音（"Context limit reached — compress now"）留着，末尾追加一句「压过正文就只剩摘要」——
- * 此刻正文最容易被顺手折掉；tier 提醒（蒸馏/冷凝）也留着，它带的是另一套具体指引。
+ * 旧版 ACP 的日常语音（"efficiency nudge"）**丢掉**：它从 45% 占用起每轮都来，而压不压此刻由那行
+ * 提示自己说，提醒只是在重复模型已经知道的东西——用户实测「触发太频繁」，一直屏蔽。旧版紧急语音
+ * 留着，末尾追加一句「压过正文就只剩摘要」；tier 提醒（蒸馏/冷凝）也留着，它带的是另一套具体指引。
+ * 新版 ACP 在代理层注入，这条追加够不到；常驻边界行本身已经说了越界后果。
  *
  * ## 注入成合成 user 消息，而不是 system 消息
  * Pi 对不支持「对话中途改 system」的模型会把整段 prompt 重放，等于提醒每次出现/消失都整前缀
@@ -274,12 +275,12 @@ export default async function skillLatch(pi: ExtensionAPI): Promise<void> {
 		};
 	});
 
-	// ACP 的压缩提醒（见文件头）：挂 `context_with_system` 是因为它按定义排在所有 `context`
-	// 处理器之后，ACP 本轮的提醒此时必已在列表里。日常语音丢掉（每轮都来，成了墙纸）；紧急与
-	// tier 语音留着，并在末尾追加说明。
+	// ACP 的压缩提醒（见文件头）：挂 `context_with_system` 是因为旧版 ACP 把提醒追加在
+	// `context` 阶段，这里按定义排在所有 `context` 处理器之后才看得到。`billion-context`
+	// 0.1.216+ 在代理层注入，这条处理器对它是空转；保留它只为旧版 ACP 的紧急/tier 提醒。
 	//
-	// 技能提示行也贴在这里：它只在「正要压缩」时有信息量，而留存的提醒就是那一刻的信号。
-	// 没有提醒的回合一个字都不注入——这才是真的省（取舍见 acp/boundary-note.ts）。
+	// 技能边界行不在这里：它由下面的 `<skill-hint>` 处理器每轮计算（钉住期间常驻），
+	// 避免与常驻行重复；这里只保留紧急提醒的 `atRiskFoldNote`。
 	pi.on("context_with_system", (event) => {
 		if (!presence.enabledFor(settings.acp)) return;
 		const kept = dropRoutineNudges(event.messages);
@@ -289,9 +290,6 @@ export default async function skillLatch(pi: ExtensionAPI): Promise<void> {
 		if (entries.length > 0 && base.some((message) => isAcpEmergencyMessage(message))) {
 			notes.push(atRiskFoldNote(entries.map((entry) => ({ name: entry.name, path: entry.path }))));
 		}
-		// 日常提醒已经在上面被丢掉，所以这里活下来的是 tier 与紧急两类。
-		const boundary = boundaryNotice(entries);
-		if (boundary && base.some((message) => isAcpNudgeMessage(message))) notes.push(boundary);
 		if (notes.length === 0) return kept ? { messages: kept } : undefined;
 		// 贴到这一轮第一条提醒的末尾，而不是新起一条 user 消息：注入点越少越不容易成墙纸。
 		const text = notes.join("\n\n");
@@ -333,7 +331,15 @@ export default async function skillLatch(pi: ExtensionAPI): Promise<void> {
 	});
 
 	pi.on("context_with_system", (event) => {
-		if (!settings.hints || skills.length === 0) return;
+		const boundary = boundaryNotice(latch.list());
+		const noteMessage = (text: string) => ({
+			role: "user" as const,
+			content: [{ type: "text" as const, text }],
+			timestamp: Date.now(),
+		});
+		if (skills.length === 0 || !settings.hints) {
+			return boundary ? { messages: [...event.messages, noteMessage(boundary)] } : undefined;
+		}
 		const latchedNames = latch.names();
 		const suggestions =
 			pendingText === ""
@@ -357,15 +363,15 @@ export default async function skillLatch(pi: ExtensionAPI): Promise<void> {
 		// 没有新命中也没有结转的，这一轮就不注入：空的 `<skill-hint>` 比没有更吵。
 		if (suggestions.length === 0 && carried.length === 0) {
 			unread = [];
-			return;
+			return boundary ? { messages: [...event.messages, noteMessage(boundary)] } : undefined;
 		}
 		// 发出去就消费掉：结转只给一次（见 `carryNote`），重复提到会变成墙纸。
 		unread = [];
 		offered = suggestions;
 		const text = buildHintText([...suggestions, ...carried], latchedNames, carried.map((entry) => entry.name));
-		if (!text) return;
-		const hint = { role: "user" as const, content: [{ type: "text" as const, text }], timestamp: Date.now() };
-		return { messages: [...event.messages, hint] };
+		if (!text && !boundary) return;
+		const combined = [text, boundary].filter(Boolean).join("\n\n");
+		return { messages: [...event.messages, noteMessage(combined)] };
 	});
 
 	// 结算：把「点名过但没读」的留给下一次请求一次，其余清空。

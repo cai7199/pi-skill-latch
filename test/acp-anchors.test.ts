@@ -4,8 +4,12 @@
 // 因为 ACP 不给这类消息打标记。ACP 哪天改文案，滤网会**静默失灵**——日常提醒每轮复活
 // （墙纸回归），或 tier 被误判。本测试把已安装 bundle 里的锚点逐一钉死：文案一改，先崩这里。
 //
-// 只有找得到 ACP 的 bundle 时才跑第一条（`PI_ACP_BUNDLE` 指向 dist/index.js，或本包所在目录
-// 的 node_modules 里有它）；第二条不依赖 ACP，任何环境都会跑。
+// 只有找得到 ACP 的 bundle 时才跑第一条（`PI_ACP_BUNDLE` 指向 bundle，或本包所在目录的
+// node_modules 里有它）；第二条不依赖 ACP，任何环境都会跑。
+//
+// 上游从 `billion-context-pi`（dist/index.js）换成了 `billion-context`（dist/agent/pi-native.js）。
+// 新包的 nudge 在本地代理层注入，Pi 的 `context_with_system` 看不到；这里的锚点测试仍保留，
+// 一是旧版兼容，二是万一上游把 nudge 放回钩子时能第一时间发现文案漂移。
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -18,21 +22,29 @@ import {
 	isAcpTierNudge,
 } from "../src/acp/nudge-filter.ts";
 
-const ACP_NAME = "billion-context-pi";
+const ACP_NAMES = ["billion-context", "billion-context-pi"] as const;
+const BUNDLE_PATHS = [
+	["dist", "agent", "pi-native.js"],
+	["dist", "index.js"],
+] as const;
 
 /** 找 ACP 的 bundle：显式路径优先，再看工作目录与包目录下的 node_modules。 */
 function locateBundle(): { bundle: string } | { reason: string } {
 	const explicit = process.env.PI_ACP_BUNDLE;
-	const candidates = [
-		...(explicit ? [resolve(explicit)] : []),
-		resolve(process.cwd(), "node_modules", ACP_NAME, "dist", "index.js"),
-		resolve(import.meta.dirname ?? ".", "..", "node_modules", ACP_NAME, "dist", "index.js"),
-		join(process.cwd(), "node_modules", ACP_NAME, "dist", "index.js"),
-	];
-	for (const candidate of candidates) {
-		if (existsSync(candidate)) return { bundle: candidate };
+	if (explicit) {
+		const path = resolve(explicit);
+		if (existsSync(path)) return { bundle: path };
 	}
-	return { reason: `未找到 ${ACP_NAME} 的 dist/index.js（可设 PI_ACP_BUNDLE 指定）` };
+	const roots = [process.cwd(), resolve(import.meta.dirname ?? ".", "..")];
+	for (const root of roots) {
+		for (const name of ACP_NAMES) {
+			for (const parts of BUNDLE_PATHS) {
+				const candidate = join(root, "node_modules", name, ...parts);
+				if (existsSync(candidate)) return { bundle: candidate };
+			}
+		}
+	}
+	return { reason: `未找到 billion-context 的 bundle（可设 PI_ACP_BUNDLE 指定）` };
 }
 
 /**
@@ -45,20 +57,22 @@ const ANCHORS = [
 	{ text: "[EMERGENCY", why: "紧急 tier 变体的判据（[EMERGENCY — TIER n …]）" },
 	{ text: "[TIER ", why: "非紧急 tier 提醒（蒸馏/冷凝）的判据：它带具体指引，必须留下" },
 	{ text: "HOW TO COMPRESS", why: "三类提醒共用的规则块标题——认出「这是 ACP 提醒」的公共锚点" },
-	{ text: "Compressed blocks: ", why: "提醒里已折块清单的固定措辞" },
+	{ text: "Compressed blocks: ", why: "旧版提醒里已折块清单的固定措辞", optional: true },
+	{ text: "Active blocks (", why: "新版提醒里已折块清单的固定措辞", optional: true },
 ];
 
-test("nudge-filter 用到的锚点都在已装 ACP bundle 里", (t) => {
+test("nudge-filter 的必需锚点都在已装 ACP bundle 里", (t) => {
 	const located = locateBundle();
 	if ("reason" in located) {
 		t.skip(located.reason);
 		return;
 	}
 	const source = readFileSync(located.bundle, "utf8");
-	for (const { text: anchor, why } of ANCHORS) {
+	for (const { text: anchor, why, optional } of ANCHORS) {
+		if (optional && !source.includes(anchor)) continue;
 		assert.ok(
 			source.includes(anchor),
-			`锚点 ${JSON.stringify(anchor)} 不在 ${ACP_NAME} 的 dist/index.js 里——${why}。` +
+			`锚点 ${JSON.stringify(anchor)} 不在 ${located.bundle} 里——${why}。` +
 				`文案若已改，同步更新 src/acp/nudge-filter.ts 的常量、本表与 test/nudge-filter 里的手写样本。`,
 		);
 	}

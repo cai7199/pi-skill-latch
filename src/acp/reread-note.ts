@@ -1,8 +1,9 @@
 /**
  * 「正文被折走了 / 马上要被折走，回去重读」的那两句。
  *
- * 两个触发点共用这里的措辞：ACP 报上下文告急时在它末尾追加一句（`atRiskFoldNote`），
+ * 两个触发点共用这里的措辞：旧版 ACP 报上下文告急时在它末尾追加一句（`atRiskFoldNote`），
  * 以及下一轮发现正文已经不在了（`foldedBodyNote`）。分散写两份的话，改一处漏一处。
+ * 新版 `billion-context` 在代理层注入提醒，这个追加够不到；常驻边界行本身已经说了越界后果。
  *
  * ## 为什么必须带全路径
  * 正文一被折，模型手里只剩技能名，而 `read` 要的是路径。原先这里写的是
@@ -61,10 +62,11 @@ function foldWarning(targets: readonly RereadTarget[], lead: string): string {
 	return `SKILL LATCH: if ${lead} folds ${names}, what remains are summaries, not the skills themselves:\n${formatList(targets)}`;
 }
 /**
- * 还没折，但 ACP 已经在催压缩。触发点：紧急提醒的末尾。
+ * 还没折，但旧版 ACP 已经在催压缩。触发点：旧版紧急提醒的末尾。
  *
- * 不写「钉点已放」，也不催「compress now」：扩展不再放开任何东西，压到哪由同一轮注入的
- * 提示行说了算（见 `lib/boundary-note.ts`）。这句只负责说清代价。
+ * 新版 ACP 在代理层注入，这条追加够不到；常驻边界行（`acp/boundary-note.ts`）已经每轮说了
+ * 越界后果。不写「钉点已放」，也不催「compress now」：扩展不再放开任何东西，压到哪由边界行
+ * 说了算。这句只负责在旧版紧急提醒里说清代价。
  */
 export function atRiskFoldNote(targets: readonly RereadTarget[]): string {
 	return foldWarning(targets, "this compression");

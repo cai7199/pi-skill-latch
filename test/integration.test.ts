@@ -97,7 +97,7 @@ test("无 ACP：摘掉原生清单、按词表点名，且不钉住任何技能"
 	assert.ok(text(injected[0].content).includes(skillPath), "提醒里要带路径：模型得知道去 read 哪个文件");
 
 	// 读技能正文：没有 ACP 就不该钉住。钉住的唯一后果是「压过正文就只剩摘要」那类提示，
-	// 所以用「紧急提醒末尾有没有被追加说明」来观察。
+	// 所以用「旧版 ACP 的紧急提醒末尾有没有被追加说明」来观察。
 	await pi.run("tool_call", { toolName: "read", input: { path: skillPath }, toolCallId: "c1" });
 	const emergency = { role: "user", content: "⚠️ Context limit reached — compress now.\n\nHOW TO COMPRESS\n…" };
 	const after = await pi.run("context_with_system", {
@@ -156,13 +156,12 @@ test("无 ACP：日常压缩提醒不碰（那是 ACP 的东西），search_skil
 
 // ── 有 ACP：边界提示与提醒筛选 ──────────────────────────────────────────────
 
-const ACP_REF = '<acp tokens="12" type="user">m00001</acp>';
 const acpUser = (text_: string, ref: number) => ({
 	role: "user",
 	content: [{ type: "text", text: `${text_}\n<acp tokens="12" type="user">m0000${ref}</acp>` }],
 });
 
-test("有 ACP：钉住后报边界号，紧急提醒末尾追加「折了就只剩摘要」", async () => {
+test("有 ACP：钉住后每轮报边界号；旧版紧急提醒末尾追加「折了就只剩摘要」", async () => {
 	const { pi, skillPath } = await fixture({ "demo-skill": ["仿真"] });
 
 	// 第一次请求里出现 ref → 探测确认（auto 模式从此启用边界提示）
@@ -180,11 +179,33 @@ test("有 ACP：钉住后报边界号，紧急提醒末尾追加「折了就只�
 	];
 	const emergency = { role: "user", content: "⚠️ Context limit reached — compress now.\n\nHOW TO COMPRESS\n…" };
 	const request = await pi.run("context_with_system", { messages: [...transcript, emergency] });
-	const last = request.messages.at(-1);
-	const note = text(last.content);
-	assert.match(note, /m00001/, "边界号要报出来（正文前最后一条带号的消息）");
-	assert.match(note, /summary, not the skill itself/, "提醒里要说明压过去只剩摘要");
-	assert.ok(note.includes(skillPath), "折走后模型手里只剩名字，必须给全路径");
+	const emergencyOut = request.messages.find((message: any) => text(message.content).includes("Context limit reached"));
+	const risk = text(emergencyOut.content);
+	assert.match(risk, /summary, not the skill itself/, "旧版紧急提醒里要说明压过去只剩摘要");
+	assert.ok(risk.includes(skillPath), "折走后模型手里只剩名字，必须给全路径");
+
+	const boundary = text(request.messages.at(-1).content);
+	assert.match(boundary, /endId must not exceed m00001/, "边界号要报出来（正文前最后一条带号的消息）");
+	assert.match(boundary, /Ceiling, not target/, "边界是上限，不是指标");
+});
+
+test("有 ACP：没有提醒的普通轮也发边界行；折走后只留折走通知", async () => {
+	const { pi, skillPath } = await fixture({});
+	await pi.run("context_with_system", { messages: [acpUser("开始", 1)] });
+	await pi.run("tool_call", { toolName: "read", input: { path: skillPath }, toolCallId: "c1" });
+
+	const withBody = [acpUser("开始", 1), { role: "toolResult", toolCallId: "c1", content: [{ type: "text", text: BODY }] }];
+	const boundaryTurn = await pi.run("context_with_system", { messages: withBody });
+	const boundary = text(boundaryTurn.messages.at(-1).content);
+	assert.match(boundary, /demo-skill \(if still needed\): endId must not exceed m00001/, "普通轮也要报边界");
+	assert.match(boundary, /Ceiling, not target/);
+
+	const folded = [acpUser("开始", 1), { role: "user", content: "（这一轮上下文里只剩摘要）" }];
+	const foldedTurn = await pi.run("context_with_system", { messages: folded });
+	const note = text(foldedTurn.messages.at(-1).content);
+	assert.match(note, /folded the body of demo-skill/, "折走后只发折走通知");
+	assert.ok(note.includes(skillPath), "折走通知要给全路径");
+	assert.doesNotMatch(note, /endId must not exceed/, "同轮不再出现已折技能的边界行");
 });
 
 test("有 ACP：日常提醒被丢掉，tier 提醒留着", async () => {

@@ -2,9 +2,25 @@
 
 ## [Unreleased]
 
-- `peerDependencies` 放宽：`@earendil-works/pi-coding-agent >=1.6.0` → `>=1.5.0`。核查确认 1.5.0 起
-  已有带 `outcome` 的可操作 `turn_end` 边界（`BoundaryState.outcome: "completed" | "aborted" | "error"`），
-  扩展只用 1.5.0+ 事件面，包实际支持 pi 1.5.0 及以上。
+## [0.3.0] - 2026-11-28
+
+**Behavior change — the boundary note is now every turn.** While a skill is latched, the note is
+emitted on every request, not only on turns that already carry an ACP nudge. The wording is a rule
+(`endId must not exceed …`) rather than a hint; multiple skills share one line, sorted by boundary,
+with `To keep all` naming the smallest limit. It still never blocks compression, and if a body does
+fold the next turn reports it once with the full path to re-read. A folded skill is removed from the
+same turn's boundary line before that line is built, so the two notices cannot contradict each other.
+This makes the note work when the model compresses on its own, and under `billion-context` 0.1.216+,
+whose nudges are injected at the local proxy after every Pi hook.
+
+- Adapted to the upstream rename `billion-context-pi` → `billion-context`; the anchor test now finds
+  `dist/agent/pi-native.js`. The old nudge filter remains only as a compatibility path for ACP
+  versions that still append reminders in `context`.
+- `peerDependencies` relaxed: `@earendil-works/pi-coding-agent >=1.6.0` → `>=1.5.0`. 1.5.0 already has
+  the actionable `turn_end` boundary with `outcome` (`"completed" | "aborted" | "error"`), and the
+  extension only uses the 1.5.0+ event surface.
+- README ACP section and `settings.hints` documentation updated; `settings.hints = false` disables
+  the keyword hint but leaves compression boundary notes running.
 
 ## [0.2.0]
 

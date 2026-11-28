@@ -5,7 +5,7 @@ Pi package that makes skills cost nothing until they are needed: keyword hints p
 
 ## Install
 
-Needs a working `pi` **1.6.0 or newer** (Node >= 22.18). `pi install` clones the repo and runs
+Needs a working `pi` **1.5.0 or newer** (Node >= 22.18; built and tested against 1.6.x). `pi install` clones the repo and runs
 `npm install --omit=dev` inside it, so `git` and the npm registry must be reachable.
 
 ```bash
@@ -37,7 +37,7 @@ Optional, but this is what makes the keyword hints fire: copy `skill-suggest.exa
 
 ## Compatibility
 
-Built and tested against `pi` **1.6.0**; `package.json` → `peerDependencies` requires `>=1.6.0`.
+Built and tested against `pi` **1.6.0**; `package.json` → `peerDependencies` requires `>=1.5.0`.
 
 The reason for the floor is the hint's lifetime. `<skill-hint>` expires at the end of a *turn* — one
 LLM request plus the tool calls it makes — rather than at the end of a user message. That boundary is
@@ -61,7 +61,7 @@ replaces it with two channels that only pay when they hit:
 - **`search_skills`** — when nothing matched, the model can search skills by keyword (name,
   description, your trigger words). Costs one tool call, only when called.
 
-With [ACP](#acp-optional-compression-boundary-notes) (`billion-context-pi`) installed it also does
+With [ACP](#acp-optional-compression-boundary-notes) (`billion-context`) installed it also does
 one more thing: it reports where compression may cut **without folding the skill body you just
 read**, and tells the model when a body has already been folded into a summary.
 
@@ -130,7 +130,7 @@ with a skill name.
 | `settings.acp` | `"auto"` (default) enables the compression boundary notes only after ACP message refs show up in the transcript; `true` forces them on; `false` turns them off entirely. |
 | `settings.nativeSkillList` | `true` keeps Pi's native `<available_skills>` list. Escape hatch when a skill stops being used. |
 | `settings.searchTool` | `false` skips registering `search_skills`. |
-| `settings.hints` | `false` disables `<skill-hint>` injection (and its one standing rule). |
+| `settings.hints` | `false` disables `<skill-hint>` injection (and its one standing rule). Compression boundary notes still run. |
 | `settings.debug` | `true` writes `<agentDir>/skill-latch-debug.log` every turn: message index, ref, tool call id, text head. |
 | `<skill-name>` | Trigger words for that skill. ASCII words match on word boundaries; a trailing `*` widens the right edge (`guideline*`). `[]` mutes the skill. |
 | `presets` | Named word fragments; reference them as `"@name"` from a word list or a companion condition. Expanded once, one level deep. |
@@ -162,22 +162,36 @@ keys that match no installed skill, companion edges that can never fire, and unu
 
 ## ACP: optional compression boundary notes
 
-Everything above works on stock Pi. If [ACP](https://www.npmjs.com/package/billion-context-pi) is
+Everything above works on stock Pi. If [ACP](https://www.npmjs.com/package/billion-context) is
 loaded, this package also watches which skill bodies were read and reports the last message they
-safely fit under:
+safely fit under. While a skill is latched, the line is emitted **every turn**:
 
 ```
-SKILL LATCH — compress up to (body folds to a summary past it):
-- spectre: m00142
+SKILL LATCH — paper (if still needed): endId must not exceed m00142. Past it the body folds to a
+summary (you'll be told). Ceiling, not target.
 ```
 
-That line is only injected on turns that already carry an ACP nudge, so it costs nothing on ordinary
-turns. It is a **hint, not a gate**: compression is never blocked, and if a body does get folded the
-next turn says so, once, with the full path to re-read.
+Multiple skills share one line, sorted by boundary; `To keep all` gives the smallest number:
+
+```
+SKILL LATCH — if still needed, endId must not exceed these limits: spectre m00142, paper m00199.
+To keep all: m00142. Past a limit the body folds to a summary (you'll be told). Ceiling, not target.
+```
+
+The wording is a rule, not an execution gate: compression is never blocked. If a body does get
+folded, the next turn says so once, with the full path to re-read. The line is computed from the
+current transcript every turn, so it still applies when the model compresses outside an ACP nudge;
+it does not depend on ACP's own reminder at all.
 
 ACP is detected from the transcript itself — once a message carries an `<acp …>mNNNNN</acp>` ref,
 the notes turn on; with `settings.acp = "auto"` and no ACP, the whole subsystem stays idle instead of
 accumulating registrations it can never report.
+
+**Old ACP compatibility.** `billion-context-pi` appended its reminders inside Pi's `context` hook;
+this package still filters the daily one and appends `atRiskFoldNote` to the emergency one. Newer
+`billion-context` injects reminders at its local proxy, after every Pi hook, so that append is not
+reachable — the per-turn boundary line already carries the consequence. The nudge filter is
+best-effort and only fires on the old layout.
 
 **Load order matters.** If another package returns `systemPrompt` from `before_agent_start`, it
 snapshots the prompt with the native skill list still in it, and clearing afterwards is too late.
@@ -187,7 +201,7 @@ List this package before that one in settings:
 {
   "packages": [
     "npm:pi-skill-latch",
-    "npm:billion-context-pi"
+    "npm:billion-context"
   ]
 }
 ```
@@ -212,7 +226,7 @@ lives in the same config file (`settings.entry`), and each copy carries a mirror
 
 ```json
 {
-  "packages": ["./my-local-variant", "npm:pi-skill-latch", "npm:billion-context-pi"]
+  "packages": ["./my-local-variant", "npm:pi-skill-latch", "npm:billion-context"]
 }
 ```
 
@@ -240,12 +254,14 @@ lives in the same config file (`settings.entry`), and each copy carries a mirror
 
 ```bash
 npm test                                   # node --test, type stripping
-PI_ACP_BUNDLE=<path>/billion-context-pi/dist/index.js npm test   # also verify ACP anchors
+PI_ACP_BUNDLE=<path>/billion-context/dist/agent/pi-native.js npm test   # also verify ACP anchors
 ```
 
-`test/acp-anchors.test.ts` pins every text anchor that `src/acp/nudge-filter.ts` uses to recognise
-ACP's own nudge messages. ACP does not tag those messages, so a wording change upstream would make
-the filter fail silently; that test is the alarm.
+`test/acp-anchors.test.ts` pins the text anchors that `src/acp/nudge-filter.ts` uses to recognise
+old ACP's nudge messages. ACP does not tag those messages, so a wording change upstream would make
+the filter fail silently; that test is the alarm. The new `billion-context` bundle is found under
+`node_modules/billion-context/dist/agent/pi-native.js`; its proxy-level reminders are not visible to
+Pi hooks, so the filter is only a compatibility path.
 
 ## License
 

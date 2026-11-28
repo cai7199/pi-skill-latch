@@ -154,15 +154,15 @@ test("提示行：各报各的号，不拦任何调用", () => {
 
 	const one = boundaryNotice([mk("paper", 99)]);
 	assert.match(one, /^SKILL LATCH/, "行首要认得出是扩展说的话");
-	assert.match(one, /compress up to/, "行头只说这串号是给 compress 的");
-	assert.match(one, /- paper: m00099/);
-	// 释放工具已撤，「压过去就成摘要」只剩行头一处说，且只在钉住期间计费。
-	assert.match(one, /folds to a summary past it/);
+	assert.match(one, /endId must not exceed m00099/, "闸门口吻：规则不是建议");
+	assert.match(one, /folds to a summary/, "越界后果要说清");
+	assert.match(one, /Ceiling, not target/, "别把上限当指标");
 	assert.doesNotMatch(one, /release_skills/, "不再提已撤的工具");
 
-	const two = boundaryNotice([mk("spectre", 59), mk("paper", 99)]);
-	assert.match(two, /- spectre: m00059/);
-	assert.match(two, /- paper: m00099/, "多技能各报各的：一次压缩只有一个终点，最小值自己看得见");
+	const two = boundaryNotice([mk("paper", 99), mk("spectre", 59)]);
+	assert.match(two, /spectre m00059/, "多技能各报各的，且按边界升序");
+	assert.match(two, /paper m00099/);
+	assert.match(two, /To keep all: m00059/, "一次压缩只有一个终点，全保住取最小");
 
 	// 未定位的条目没有号码可报，也不编一个。
 	assert.doesNotMatch(boundaryNotice([mk("paper", 99), mk("late", null)]), /late/);
