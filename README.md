@@ -18,7 +18,7 @@ Restart pi afterwards — extensions are not hot-reloaded. `pi list` should then
 
 | | |
 |---|---|
-| pin a version | `pi install git:github.com/cai7199/pi-skill-latch#v0.1.0` |
+| pin a version | `pi install git:github.com/cai7199/pi-skill-latch#v0.3.0` |
 | try for one run | `pi install -e git:github.com/cai7199/pi-skill-latch` |
 | from a checkout | `pi install ./path/to/pi-skill-latch` |
 | uninstall | `pi remove git:github.com/cai7199/pi-skill-latch` |
