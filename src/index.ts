@@ -68,7 +68,9 @@
  * ## ACP 的压缩提醒：旧版才滤，新版不在钩子里
  * 旧版 ACP 把提醒追加在**它的** `context` 处理器里，本包挂在 `context_with_system`（按定义跑在所有
  * `context` 之后）才看得到（见 `acp/nudge-filter.ts`）。`billion-context` 0.1.216+ 改成在本地
- * 代理层注入（trailing user turn），所有 Pi 钩子都看不到；这里的滤网对它是空转，边界行不依赖它。
+ * 代理层注入（trailing user turn），所有 Pi 钩子都看不到；那一类由 `acp/provider-nudge.ts` 在
+ * `before_provider_request` 阶段处理（**本包必须排在 ACP 之后**，顺序见那里的文件头）。
+ * 边界行不依赖这两条通道。
  *
  * 旧版 ACP 的日常语音（"efficiency nudge"）**丢掉**：它从 45% 占用起每轮都来，而压不压此刻由那行
  * 提示自己说，提醒只是在重复模型已经知道的东西——用户实测「触发太频繁」，一直屏蔽。旧版紧急语音
@@ -93,6 +95,7 @@ import { appendNudgeNote, dropRoutineNudges, isAcpEmergencyMessage, isAcpNudgeMe
 import { AcpPresence } from "./acp/presence.ts";
 import { acpRefOf, messageTextOf } from "./acp/ref-scan.ts";
 import { atRiskFoldNote, foldedBodyNote } from "./acp/reread-note.ts";
+import { dropRoutineProviderNudge } from "./acp/provider-nudge.ts";
 import { configFile, debugLogPath, loadConfig } from "./config.ts";
 import { claimEntry } from "./entry-gate.ts";
 import { SkillLatch, skillNameFromPath, type LatchedSkill } from "./lib/latch.ts";
@@ -140,6 +143,31 @@ function debugDump(path: string, messages: readonly unknown[], entries: readonly
 export default async function skillLatch(pi: ExtensionAPI): Promise<void> {
 	const config = loadConfig(configFile());
 	const { settings, triggers, companion, noName } = config;
+
+	// ── 代理层的日常提醒：本包排在 ACP 之后才看得见 ─────────────────────────────
+	// `billion-context` 0.1.216+ 把提醒追加在本地代理层，`context`/`context_with_system`
+	// 都看不到（见 `acp/provider-nudge.ts` 的文件头）。所以这条过滤器必须注册在互斥闸
+	// **之前**：本机是 `local` 版在跑，通用版在闸门后只剩这一件事仍要生效。
+	// 顺序靠 `settings.json` 的 `packages`：本包必须排在 `billion-context` 之后。
+	const userTexts = new Set<string>();
+	pi.on("input", (event) => {
+		const text = typeof event.text === "string" ? event.text.trim() : "";
+		if (!text) return;
+		userTexts.add(text);
+		// 只留最近 200 条：够覆盖「用户刚把提醒原文贴进来」这种事，又不会长成泄漏。
+		if (userTexts.size > 200) {
+			const oldest = userTexts.values().next().value;
+			if (typeof oldest === "string") userTexts.delete(oldest);
+		}
+	});
+	pi.on("before_provider_request", (event) => {
+		const result = dropRoutineProviderNudge(event.payload, (text) => userTexts.has(text.trim()));
+		if (!result) return;
+		console.log(
+			`[skill-latch] dropped routine ACP nudge from payload.${result.dropped.carrier} (${result.dropped.chars} chars)`,
+		);
+		return result.payload;
+	});
 
 	// 互斥闸（见 src/entry-gate.ts）：同一台机器上可能还装着一份本机特化实现，两边不能同时接线
 	// （重复注册 search_skills、双份注入提醒）。必须在任何 await 之前占位，否则加载顺序就失效了。

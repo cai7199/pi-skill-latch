@@ -189,9 +189,17 @@ accumulating registrations it can never report.
 
 **Old ACP compatibility.** `billion-context-pi` 0.1.83 appended its reminders inside Pi's `context`
 hook; this package still filters the daily one and appends `atRiskFoldNote` to the emergency one.
-`billion-context` **0.1.216+** injects reminders at its local proxy, after every Pi hook, so that
-append is not reachable — the per-turn boundary line already carries the consequence. The nudge
-filter is best-effort and only fires on the old layout.
+`billion-context` **0.1.216+** injects reminders at its local proxy, after every Pi hook, so a
+message-level filter can never see them. Those are handled one layer down instead:
+`src/acp/provider-nudge.ts` inspects the outgoing provider payload in `before_provider_request`
+(`messages` for Anthropic/OpenAI, `input` for Responses, `contents` for Gemini), drops the trailing
+*routine* reminder, and keeps the emergency and tier ones — they carry the signal and the distillation
+rules. Text the user actually typed is never dropped.
+
+That handler runs in registration order, so this package must load **after** `billion-context` in
+`packages`; the handler is registered before the entry gate for the same reason — a local variant that
+wins the gate still benefits from it. `test/../tests/skill-latch-provider-nudge.test.mjs` in the
+manager repo asserts the order.
 
 **Load order matters.** If another package returns `systemPrompt` from `before_agent_start`, it
 snapshots the prompt with the native skill list still in it, and clearing afterwards is too late.
@@ -257,11 +265,11 @@ npm test                                   # node --test, type stripping
 PI_ACP_BUNDLE=<path>/billion-context/dist/agent/pi-native.js npm test   # also verify ACP anchors
 ```
 
-`test/acp-anchors.test.ts` pins the text anchors that `src/acp/nudge-filter.ts` uses to recognise
-old ACP's nudge messages. ACP does not tag those messages, so a wording change upstream would make
-the filter fail silently; that test is the alarm. The new `billion-context` bundle is found under
-`node_modules/billion-context/dist/agent/pi-native.js`; its proxy-level reminders are not visible to
-Pi hooks, so the filter is only a compatibility path.
+`test/acp-anchors.test.ts` pins the text anchors that `src/acp/nudge-filter.ts` (and the shared
+text matchers reused by `src/acp/provider-nudge.ts`) use to recognise ACP reminders. ACP does not tag
+them, so a wording change upstream would make the filters fail silently; that test is the alarm. The
+new `billion-context` bundle is found under `node_modules/billion-context/dist/agent/pi-native.js`;
+its proxy-level reminders are matched as plain text in the provider payload.
 
 ## License
 

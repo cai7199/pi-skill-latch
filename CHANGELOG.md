@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-28
+
+**New — the routine ACP nudge is now dropped at the provider layer.** `billion-context` 0.1.216+
+appends its "you should compress" reminder in the local proxy, after every Pi hook has run, so the
+message-level filter (`acp/nudge-filter.ts`) never saw it: the gentle reminder came back on every turn
+from `minContextLimitPct` (45%) onward. The new `acp/provider-nudge.ts` inspects the outgoing provider
+payload (`messages` for Anthropic/OpenAI, `input` for Responses, `contents` for Gemini) and removes the
+trailing *routine* reminder only; emergency (`Context limit reached`, `[EMERGENCY`) and tier (`[TIER `)
+reminders stay, and text the user actually typed is never dropped. The handler is registered *before*
+the entry gate on purpose — this is the one job the inactive copy still performs when a local variant
+runs the skill features.
+
+The filter only sees the reminder if this package loads **after** `billion-context` in `packages`
+(`before_provider_request` handlers run in registration order); `tests/skill-latch-provider-nudge.test.mjs`
+asserts that order against `profiles/local/settings.json`.
+
 ## [0.3.0] - 2026-11-28
 
 **Behavior change — the boundary note is now every turn.** While a skill is latched, the note is

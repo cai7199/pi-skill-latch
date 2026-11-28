@@ -288,10 +288,12 @@ test("开关：searchTool / hints 关掉之后，对应通道完全不注册", a
 // ── 互斥闸：同一台机器上还装着本机特化实现时 ──────────────────────────────
 // 这两个用例放最后：占位是进程级的，其他用例需要它是「未占用」或已被 generic 占用。
 
-test("互斥闸：settings.entry = local 时通用包完全不接线", async () => {
+test("互斥闸：settings.entry = local 时通用包只保留代理层提醒过滤", async () => {
 	resetEntryClaim();
 	const { pi } = await fixture({ settings: { entry: "local" } });
-	assert.equal(pi.handlers.size, 0, "一个钩子都不该注册");
+	// 技能功能一件都不接线；唯一例外是 provider 层的日常提醒过滤（acp/provider-nudge.ts）——
+	// 新版 ACP 在本地代理层注入提醒，这条是**被闸门关掉的那份**仍要干的活（见 src/index.ts）。
+	assert.deepEqual([...pi.handlers.keys()].sort(), ["before_provider_request", "input"], "除提醒过滤外不该注册任何钩子");
 	assert.equal(pi.tools.length, 0, "search_skills 也不该注册");
 	resetEntryClaim();
 });
@@ -300,7 +302,7 @@ test("互斥闸：特化版已占位时（auto）通用包让位", async () => {
 	resetEntryClaim();
 	assert.equal(claimEntry("local", "auto").run, true);
 	const { pi } = await fixture({});
-	assert.equal(pi.handlers.size, 0);
+	assert.deepEqual([...pi.handlers.keys()].sort(), ["before_provider_request", "input"]);
 	assert.equal(pi.tools.length, 0);
 	resetEntryClaim();
 });
