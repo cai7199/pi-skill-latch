@@ -5,7 +5,7 @@ Pi package that makes skills cost nothing until they are needed: keyword hints p
 
 ## Install
 
-Needs a working `pi` **1.5.0 or newer** (Node >= 22.18; built and tested against 1.6.x). `pi install` clones the repo and runs
+Needs a working `pi` **1.5.0 or newer** (Node >= 22.18; built and tested against 1.7.0). `pi install` clones the repo and runs
 `npm install --omit=dev` inside it, so `git` and the npm registry must be reachable.
 
 ```bash
@@ -18,7 +18,7 @@ Restart pi afterwards — extensions are not hot-reloaded. `pi list` should then
 
 | | |
 |---|---|
-| pin a version | `pi install git:github.com/cai7199/pi-skill-latch#v0.3.0` |
+| pin a version | `pi install git:github.com/cai7199/pi-skill-latch#v0.4.0` |
 | try for one run | `pi install -e git:github.com/cai7199/pi-skill-latch` |
 | from a checkout | `pi install ./path/to/pi-skill-latch` |
 | uninstall | `pi remove git:github.com/cai7199/pi-skill-latch` |
@@ -198,8 +198,8 @@ rules. Text the user actually typed is never dropped.
 
 That handler runs in registration order, so this package must load **after** `billion-context` in
 `packages`; the handler is registered before the entry gate for the same reason — a local variant that
-wins the gate still benefits from it. `test/../tests/skill-latch-provider-nudge.test.mjs` in the
-manager repo asserts the order.
+wins the gate still benefits from it. If you also run a local variant of this package, keep this one
+**last** in `packages`: the handler still runs, and only that order guarantees it sees the reminder.
 
 **Load order matters.** If another package returns `systemPrompt` from `before_agent_start`, it
 snapshots the prompt with the native skill list still in it, and clearing afterwards is too late.
