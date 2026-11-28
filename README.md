@@ -162,9 +162,9 @@ keys that match no installed skill, companion edges that can never fire, and unu
 
 ## ACP: optional compression boundary notes
 
-Everything above works on stock Pi. If [ACP](https://www.npmjs.com/package/billion-context) is
-loaded, this package also watches which skill bodies were read and reports the last message they
-safely fit under. While a skill is latched, the line is emitted **every turn**:
+Everything above works on stock Pi. If [ACP](https://www.npmjs.com/package/billion-context)
+**0.1.216+** is loaded, this package also watches which skill bodies were read and reports the last
+message they safely fit under. While a skill is latched, the line is emitted **every turn**:
 
 ```
 SKILL LATCH — paper (if still needed): endId must not exceed m00142. Past it the body folds to a
@@ -187,11 +187,11 @@ ACP is detected from the transcript itself — once a message carries an `<acp �
 the notes turn on; with `settings.acp = "auto"` and no ACP, the whole subsystem stays idle instead of
 accumulating registrations it can never report.
 
-**Old ACP compatibility.** `billion-context-pi` appended its reminders inside Pi's `context` hook;
-this package still filters the daily one and appends `atRiskFoldNote` to the emergency one. Newer
-`billion-context` injects reminders at its local proxy, after every Pi hook, so that append is not
-reachable — the per-turn boundary line already carries the consequence. The nudge filter is
-best-effort and only fires on the old layout.
+**Old ACP compatibility.** `billion-context-pi` 0.1.83 appended its reminders inside Pi's `context`
+hook; this package still filters the daily one and appends `atRiskFoldNote` to the emergency one.
+`billion-context` **0.1.216+** injects reminders at its local proxy, after every Pi hook, so that
+append is not reachable — the per-turn boundary line already carries the consequence. The nudge
+filter is best-effort and only fires on the old layout.
 
 **Load order matters.** If another package returns `systemPrompt` from `before_agent_start`, it
 snapshots the prompt with the native skill list still in it, and clearing afterwards is too late.
