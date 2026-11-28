@@ -1,6 +1,6 @@
 {
   "name": "pi-skill-latch",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Pi package that makes skills cost nothing until they are needed: keyword hints, a search_skills tool, and compression boundary notes when ACP is present.",
   "keywords": [
     "pi-package",

@@ -189,17 +189,16 @@ accumulating registrations it can never report.
 
 **Old ACP compatibility.** `billion-context-pi` 0.1.83 appended its reminders inside Pi's `context`
 hook; this package still filters the daily one and appends `atRiskFoldNote` to the emergency one.
-`billion-context` **0.1.216+** injects reminders at its local proxy, after every Pi hook, so a
-message-level filter can never see them. Those are handled one layer down instead:
-`src/acp/provider-nudge.ts` inspects the outgoing provider payload in `before_provider_request`
-(`messages` for Anthropic/OpenAI, `input` for Responses, `contents` for Gemini), drops the trailing
-*routine* reminder, and keeps the emergency and tier ones — they carry the signal and the distillation
-rules. Text the user actually typed is never dropped.
+`billion-context` **0.1.216+** injects reminders in its in-process `fetch` wrapper
+(`installFetchChain` patches `globalThis.fetch`), i.e. **after** every `before_provider_request`
+handler has returned. No Pi hook sees them, and a payload-level filter does not either — 0.4.0 tried
+exactly that and it was dead on arrival (reverted in 0.4.1). The per-turn boundary line is what makes
+compression safe here; it does not depend on ACP's reminder at all.
 
-That handler runs in registration order, so this package must load **after** `billion-context` in
-`packages`; the handler is registered before the entry gate for the same reason — a local variant that
-wins the gate still benefits from it. If you also run a local variant of this package, keep this one
-**last** in `packages`: the handler still runs, and only that order guarantees it sees the reminder.
+If the reminders feel like wallpaper under 0.1.216+, tune them where they are actually produced
+instead of intercepting them: `compress.nudgeGrowthTokens` (default `50000`; raise it to halve the
+cadence), `compress.maxContextLimit` (pressure band) and `compress.injectNudge: false` (off entirely,
+the emergency truncation safety net stays armed).
 
 **Load order matters.** If another package returns `systemPrompt` from `before_agent_start`, it
 snapshots the prompt with the native skill list still in it, and clearing afterwards is too late.
@@ -265,11 +264,11 @@ npm test                                   # node --test, type stripping
 PI_ACP_BUNDLE=<path>/billion-context/dist/agent/pi-native.js npm test   # also verify ACP anchors
 ```
 
-`test/acp-anchors.test.ts` pins the text anchors that `src/acp/nudge-filter.ts` (and the shared
-text matchers reused by `src/acp/provider-nudge.ts`) use to recognise ACP reminders. ACP does not tag
-them, so a wording change upstream would make the filters fail silently; that test is the alarm. The
-new `billion-context` bundle is found under `node_modules/billion-context/dist/agent/pi-native.js`;
-its proxy-level reminders are matched as plain text in the provider payload.
+`test/acp-anchors.test.ts` pins the text anchors that `src/acp/nudge-filter.ts` uses to recognise ACP
+reminders. ACP does not tag them, so a wording change upstream would make the filter fail silently;
+that test is the alarm. The new `billion-context` bundle is found under
+`node_modules/billion-context/dist/agent/pi-native.js`; its proxy-level reminders are matched only as
+plain text, and only when they are still visible to a Pi hook (0.1.83 layout).
 
 ## License
 

@@ -39,34 +39,6 @@ const GENTLE_ANCHORS = ["This is an efficiency nudge"];
 /** 两类都带、用来认出「这是提醒」的锚点。 */
 const NUDGE_ANCHORS = [...EMERGENCY_ANCHORS, ...GENTLE_ANCHORS, "HOW TO COMPRESS", "Compressed blocks: ", "Active blocks ("];
 
-/** tier 提醒：非紧急的 `[TIER 2 DISTILLATION TRIGGER]`；紧急的已被 `EMERGENCY_ANCHORS` 认走。 */
-const TIER_ANCHORS = ["[TIER "];
-
-// ── 文本层判据 ────────────────────────────────────────────────────────────────
-// `dropRoutineNudges` 吃的是 Pi 的消息对象，`provider-nudge.ts` 吃的是 provider payload 里的
-// 字符串；判断「是不是提醒、哪一档语音」必须同一套锚点，否则两处会各自漂移。
-
-/** 这段文本是不是 ACP 的压缩提醒（温和或紧急都算）。 */
-export function isNudgeText(text: string): boolean {
-	if (!text) return false;
-	return NUDGE_ANCHORS.some((anchor) => text.includes(anchor));
-}
-
-/** 这段文本是不是**紧急**语音（ACP 认为该压了）。 */
-export function isEmergencyNudgeText(text: string): boolean {
-	return isNudgeText(text) && EMERGENCY_ANCHORS.some((anchor) => text.includes(anchor));
-}
-
-/** 这段文本是不是 tier 级提醒（蒸馏/冷凝指引）。 */
-export function isTierNudgeText(text: string): boolean {
-	return isNudgeText(text) && TIER_ANCHORS.some((anchor) => text.includes(anchor));
-}
-
-/** 日常语音 = 认得是提醒，但既不是紧急也不是 tier —— 每轮都来的那一条，丢掉。 */
-export function isRoutineNudgeText(text: string): boolean {
-	return isNudgeText(text) && !isEmergencyNudgeText(text) && !isTierNudgeText(text);
-}
-
 function textOf(message: unknown): string {
 	if (typeof message !== "object" || message === null) return "";
 	const { role, content } = message as { role?: unknown; content?: unknown };
@@ -84,7 +56,9 @@ function textOf(message: unknown): string {
 
 /** 这条消息是不是 ACP 的压缩提醒（温和或紧急）。 */
 export function isAcpNudgeMessage(message: unknown): boolean {
-	return isNudgeText(textOf(message));
+	const text = textOf(message);
+	if (!text) return false;
+	return NUDGE_ANCHORS.some((anchor) => text.includes(anchor));
 }
 
 /**
@@ -95,7 +69,9 @@ export function isAcpNudgeMessage(message: unknown): boolean {
  * 不是严格的 95%。
  */
 export function isAcpEmergencyMessage(message: unknown): boolean {
-	return isEmergencyNudgeText(textOf(message));
+	if (!isAcpNudgeMessage(message)) return false;
+	const text = textOf(message);
+	return EMERGENCY_ANCHORS.some((anchor) => text.includes(anchor));
 }
 
 /**
@@ -124,9 +100,14 @@ export function appendNudgeNote<T>(message: T, note: string): T {
 	} as T;
 }
 
+/** tier 提醒：非紧急的 `[TIER 2 DISTILLATION TRIGGER]`；紧急的已被 `EMERGENCY_ANCHORS` 认走。 */
+const TIER_ANCHORS = ["[TIER "];
+
 /** 这条是不是 ACP 的 tier 级提醒（蒸馏/冷凝）。它带具体指引，不能当日常提醒丢掉。 */
 export function isAcpTierNudge(message: unknown): boolean {
-	return isTierNudgeText(textOf(message));
+	if (!isAcpNudgeMessage(message)) return false;
+	const text = textOf(message);
+	return TIER_ANCHORS.some((anchor) => text.includes(anchor));
 }
 
 /**

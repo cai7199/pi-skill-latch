@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-11-29
+
+**Reverted: the 0.4.0 provider-layer nudge filter.** Its premise was wrong. `billion-context` 0.1.216+
+does not append its reminders from a Pi hook — it patches `globalThis.fetch` in-process
+(`installFetchChain`) and rewrites the outgoing request there, which happens **after** every
+`before_provider_request` handler has already returned. `acp/provider-nudge.ts` therefore never saw a
+reminder; the filter was dead on arrival and has been deleted along with its tests. Verified live: a
+gentle reminder arrived unchanged with the filter installed.
+
+What actually works lives upstream: `compress.nudgeGrowthTokens` (default `50000`) sets the growth
+cadence, `compress.maxContextLimit` the pressure band, and `compress.injectNudge: false` turns reminders
+off entirely — the emergency truncation path stays armed either way. The per-turn boundary line in this
+package never depended on the reminder.
+
+Also reverted: the entry-gate tests go back to asserting that a gated copy registers no hooks at all,
+and `acp/nudge-filter.ts` keeps its original predicates (the extracted text matchers were only used by
+the deleted module).
+
 ## [0.4.0] - 2026-11-28
 
 **New — the routine ACP nudge is now dropped at the provider layer.** `billion-context` 0.1.216+
