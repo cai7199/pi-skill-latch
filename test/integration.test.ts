@@ -285,6 +285,30 @@ test("开关：searchTool / hints 关掉之后，对应通道完全不注册", a
 	assert.equal(pi.tools.length, 0, "searchTool=false：不注册工具");
 });
 
+// ── 代理层提醒过滤的接线（见 src/acp/provider-nudge.ts）──────────────────
+// 纯函数已另有单测；这里验的是「注册与早退都弄完之后，那个抠到底的处理器还在、还真的生效」。
+
+test("代理层：被闸门关掉也照样丢掉末尾日常提醒，用户原文不动", async () => {
+	resetEntryClaim();
+	const { pi } = await fixture({ settings: { entry: "local" } });
+	const [handler] = pi.handlers.get("before_provider_request") ?? [];
+	assert.ok(handler, "代理层处理器应当注册在闸门之前");
+
+	await pi.run("input", { text: "帮我跑个仿真", source: "interactive" });
+	const nudge = "This is an efficiency nudge to compress early…\n\nHOW TO COMPRESS\n\n…";
+	const dropped = await handler({
+		type: "before_provider_request",
+		payload: { messages: [{ role: "user", content: "你好" }, { role: "user", content: nudge }] },
+	});
+	assert.equal(dropped.messages.length, 1, "末尾那条日常提醒应该被丢掉");
+	assert.equal(dropped.messages[0].content, "你好", "其余消息原样保留");
+
+	// 用户自己把提醒原文贴进来：input 已经记下这句，就不该动它。
+	await pi.run("input", { text: nudge, source: "interactive" });
+	assert.equal(await handler({ type: "before_provider_request", payload: { messages: [{ role: "user", content: nudge }] } }), undefined);
+	resetEntryClaim();
+});
+
 // ── 互斥闸：同一台机器上还装着本机特化实现时 ──────────────────────────────
 // 这两个用例放最后：占位是进程级的，其他用例需要它是「未占用」或已被 generic 占用。
 
